@@ -207,7 +207,7 @@ public class LwjglInitHelper {
    * Init input system.
    * @return true on success and false otherwise
    */
-  private static boolean initInput() {
+  public static boolean initInput() {
     try {
       inputSystem = new LwjglInputSystem();
       inputSystem.startup();

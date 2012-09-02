@@ -4,3 +4,4 @@
 *.iml
 /.idea
 bin/
+nifty-renderer-lwjgl2/target/

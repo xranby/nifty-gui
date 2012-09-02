@@ -25,6 +25,11 @@
     </dependency>
     <dependency>
       <groupId>lessvoid</groupId>
+      <artifactId>nifty-lwjgl-renderer2</artifactId>
+      <version>${nifty-version}</version>
+    </dependency>
+    <dependency>
+      <groupId>lessvoid</groupId>
       <artifactId>nifty-style-black</artifactId>
       <version>${nifty-version}</version>
     </dependency>

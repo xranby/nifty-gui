@@ -1,9 +1,11 @@
 package de.lessvoid.nifty.examples.helloworld;
 
 import java.io.IOException;
+import java.util.Date;
 
 import de.lessvoid.nifty.Nifty;
 import de.lessvoid.nifty.NiftyMouse;
+import de.lessvoid.nifty.elements.render.TextRenderer;
 import de.lessvoid.nifty.examples.NiftyExample;
 import de.lessvoid.nifty.screen.Screen;
 import de.lessvoid.nifty.screen.ScreenController;
