@@ -45,6 +45,7 @@ public class ImageSelectControl extends AbstractController implements de.lessvoi
     private Element forwardElement;
     private boolean block = false;
 
+    @Override
     public void bind(
         final Nifty niftyParam,
         final Screen screenParam,
@@ -93,6 +94,7 @@ public class ImageSelectControl extends AbstractController implements de.lessvoi
      * 
      * @param inputEvent the NiftyInputEvent to process
      */
+    @Override
     public boolean inputEvent(final NiftyInputEvent inputEvent) {
       if (NiftyStandardInputEvent.MoveCursorLeft == inputEvent) {
         backClick();
