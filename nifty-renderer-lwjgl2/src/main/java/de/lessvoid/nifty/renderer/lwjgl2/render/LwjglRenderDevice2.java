@@ -98,6 +98,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
     vertexBuffer = vbo.getBuffer();
 
     generator = new CoreTextureAtlasGenerator(1024, 1024);
+    niftyShader.activate();
+    vao.bind();
   }
 
   /**
@@ -233,7 +235,10 @@ public class LwjglRenderDevice2 implements RenderDevice {
    * @return RenderImage
    */
   public RenderImage createImage(final String filename, final boolean filterLinear) {
-    return new LwjglRenderImage2(generator, filename, filterLinear, resourceLoader);
+    LwjglRenderImage2 result = new LwjglRenderImage2(generator, filename, filterLinear, resourceLoader);
+    niftyShader.activate();
+    vao.bind();
+    return result;
   }
 
   /**

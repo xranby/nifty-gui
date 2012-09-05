@@ -35,13 +35,13 @@ public class LwjglRenderFont2 implements RenderFont {
   }
 
   public int getCharacterAdvance(final char currentCharacter, final char nextCharacter, final float size) {
-    return font.getCharacterWidth(currentCharacter, nextCharacter, size);
+    return 1;//font.getCharacterWidth(currentCharacter, nextCharacter, size);
   }
-
+/*
   public Font getFont() {
     return font;
   }
-
+*/
   public void dispose() {
   }  
 }
