@@ -101,7 +101,7 @@ public class ImageSelectControl extends AbstractController implements de.lessvoi
       } else if (nextPrevHelper.handleNextPrev(inputEvent)) {
         return true;
       } else if (inputEvent == NiftyStandardInputEvent.Activate) {
-        element.onClick();
+        getElement().onClick();
         return true;
       }
       return false;
