@@ -27,8 +27,8 @@ public final class HelloWorldExampleMain {
    * @param args arguments
    */
   public static void main(final String[] args) throws Exception {
-    runStandard();
-    //runCore();
+    //runStandard();
+    runCore();
   }
 
   private static void runStandard() {

@@ -15,15 +15,15 @@ public class LwjglRenderFont2 implements RenderFont {
   }
 
   public int getHeight() {
-    return 1;//return font.getHeight();
+    return 10;//return font.getHeight();
   }
 
   public int getWidth(final String text) {
-    return 1;//return font.getStringWidth(text, 1.f);
+    return 100;//return font.getStringWidth(text, 1.f);
   }
 
   public int getWidth(final String text, final float size) {
-    return 1;//return font.getStringWidth(text, size);
+    return 100;//return font.getStringWidth(text, size);
   }
 
   public static int getKerning(final CharacterInfo charInfoC, final char nextc) {

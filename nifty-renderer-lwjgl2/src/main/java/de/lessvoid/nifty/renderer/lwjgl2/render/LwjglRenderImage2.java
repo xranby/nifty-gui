@@ -1,58 +1,61 @@
 package de.lessvoid.nifty.renderer.lwjgl2.render;
 
-import java.nio.ByteBuffer;
 import java.util.logging.Logger;
 
-import de.lessvoid.coregl.CoreRenderToTexture;
 import de.lessvoid.coregl.CoreTexture2D;
 import de.lessvoid.coregl.CoreTexture2D.ColorFormat;
 import de.lessvoid.coregl.CoreTexture2D.ResizeFilter;
 import de.lessvoid.coregl.CoreTextureAtlasGenerator;
-import de.lessvoid.nifty.renderer.lwjgl2.render.io.ImageData;
-import de.lessvoid.nifty.renderer.lwjgl2.render.io.ImageIOImageData;
-import de.lessvoid.nifty.renderer.lwjgl2.render.io.TGAImageData;
 import de.lessvoid.nifty.spi.render.RenderImage;
-import de.lessvoid.nifty.tools.resourceloader.NiftyResourceLoader;
+import de.lessvoid.resourceloader.ResourceLoader;
+import de.lessvoid.simpleimageloader.SimpleImageLoader;
+import de.lessvoid.simpleimageloader.SimpleImageLoaderConfig;
 import de.lessvoid.textureatlas.TextureAtlasGenerator.Result;
 
 public class LwjglRenderImage2 implements RenderImage {
   private static Logger log = Logger.getLogger(LwjglRenderImage2.class.getName());
-  private CoreRenderToTexture bla;
+  private final int x;
+  private final int y;
+  private final int width;
+  private final int height;
 
-  public LwjglRenderImage2(final CoreTextureAtlasGenerator generator, final String name, final boolean filterParam, final NiftyResourceLoader resourceLoader) {
+  public LwjglRenderImage2(final CoreTextureAtlasGenerator generator, final String name, final boolean filterParam, final ResourceLoader resourceLoader) {
+    log.fine("loading image: " + name);
+
+    SimpleImageLoader loader = new SimpleImageLoader();
     try {
-      log.fine("loading image: " + name);
-      ImageData imageLoader;
-      if (name.endsWith(".tga")) {
-        imageLoader = new TGAImageData();
-      } else {
-        imageLoader = new ImageIOImageData();
-      }
-      ByteBuffer imageData = imageLoader.loadImage(resourceLoader.getResourceAsStream(name));
-      imageData.rewind();
-      CoreTexture2D texture = new CoreTexture2D(ColorFormat.RGBA, imageLoader.getWidth(), imageLoader.getHeight(), imageData, ResizeFilter.Linear);
-      if (!generator.addImage(texture, name, 5)) {
-        throw new Exception("unable to add image to texture atlas (" + name + ")");
-      }
-      bla = generator.getDone();
+      de.lessvoid.simpleimageloader.ImageData data = loader.load(name, resourceLoader.getResourceAsStream(name), new SimpleImageLoaderConfig().flipped().forceAlpha());
+      CoreTexture2D texture = new CoreTexture2D(ColorFormat.RGBA, data.getWidth(), data.getHeight(), data.getData(), ResizeFilter.Linear);
+      Result result = generator.addImage(texture, name, 5);
+      x = result.getX();
+      y = result.getY();
+      width = data.getWidth();
+      height = data.getHeight();
     } catch (Exception e) {
       e.printStackTrace();
-      bla = null;
+      throw new RuntimeException(e);
     }
   }
 
   public int getWidth() {
-    return bla.getWidth();
+    return width;
   }
 
   public int getHeight() {
-    return bla.getHeight();
+    return height;
   }
 
   public void dispose() {
   }  
 
   public void bind() {
-    bla.bindTexture();
+  }
+
+  public int getX() {
+    return x;
+  }
+  
+  public int getY() {
+    return y;
   }
 }

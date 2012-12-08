@@ -6,6 +6,8 @@ package de.lessvoid.nifty.examples.defaultcontrols;
 
 import org.lwjgl.opengl.DisplayMode;
 
+import de.lessvoid.coregl.CoreLwjglSetup;
+import de.lessvoid.coregl.CoreLwjglSetup.RenderLoopCallback;
 import de.lessvoid.nifty.Nifty;
 import de.lessvoid.nifty.builder.ControlBuilder;
 import de.lessvoid.nifty.builder.EffectBuilder;
@@ -22,6 +24,8 @@ import de.lessvoid.nifty.controls.console.builder.ConsoleBuilder;
 import de.lessvoid.nifty.controls.dropdown.builder.DropDownBuilder;
 import de.lessvoid.nifty.controls.label.builder.LabelBuilder;
 import de.lessvoid.nifty.controls.slider.builder.SliderBuilder;
+import de.lessvoid.nifty.examples.LoggerShortFormat;
+import de.lessvoid.nifty.examples.LwjglInitHelper;
 import de.lessvoid.nifty.examples.NiftyExample;
 import de.lessvoid.nifty.examples.defaultcontrols.chatcontrol.ChatControlDialogDefinition;
 import de.lessvoid.nifty.examples.defaultcontrols.common.CommonBuilders;
@@ -36,9 +40,11 @@ import de.lessvoid.nifty.examples.defaultcontrols.sliderandscrollbar.SliderAndSc
 import de.lessvoid.nifty.examples.defaultcontrols.tabs.TabsControlDialogDefinition;
 import de.lessvoid.nifty.examples.defaultcontrols.textfield.TextFieldDialogControlDefinition;
 import de.lessvoid.nifty.examples.defaultcontrols.treebox.TreeBoxControlDialogDefinition;
+import de.lessvoid.nifty.examples.helloworld.HelloWorldStartScreen;
 import de.lessvoid.nifty.examples.resolution.ResolutionControl;
 import de.lessvoid.nifty.examples.resolution.ResolutionControlLWJGL;
 import de.lessvoid.nifty.renderer.lwjgl.render.LwjglRenderDevice;
+import de.lessvoid.nifty.renderer.lwjgl2.render.LwjglRenderDevice2;
 import de.lessvoid.nifty.screen.DefaultScreenController;
 import de.lessvoid.nifty.screen.Screen;
 import de.lessvoid.nifty.sound.openal.OpenALSoundDevice;
@@ -54,7 +60,12 @@ public class ControlsDemo<T> implements NiftyExample {
     resolutionControl = resControl;
   }
 
-  public static void main(final String[] args) {
+  public static void main(final String[] args) throws Exception {
+    runStandard();
+    //runCore();
+  }
+
+  private static void runStandard() {
     // init lwjgl
     if (!LwjglInitHelper.initSubSystems("Nifty Controls Demonstation")) {
       System.exit(0);
@@ -65,10 +76,44 @@ public class ControlsDemo<T> implements NiftyExample {
         new AccurateTimeProvider());
     ControlsDemo<DisplayMode> demo = new ControlsDemo<DisplayMode>(new ResolutionControlLWJGL());
     demo.prepareStart(nifty);
-
     nifty.gotoScreen("demo");
 
     // start the render loop
+    LwjglInitHelper.renderLoop(nifty, null);
+    LwjglInitHelper.destroy();
+  }
+
+  private static void runCore() throws Exception {
+    LoggerShortFormat.intialize();
+
+    CoreLwjglSetup setup = new CoreLwjglSetup();
+    setup.initialize("Nifty Hello World", 1024, 768);
+
+    if (!LwjglInitHelper.initInput()) {
+      throw new Exception("Failed to init Input");
+    }
+
+    // create nifty
+    final Nifty nifty = new Nifty(
+        new LwjglRenderDevice2(true),
+        new OpenALSoundDevice(),
+        LwjglInitHelper.getInputSystem(),
+        new AccurateTimeProvider());
+
+    ControlsDemo<DisplayMode> demo = new ControlsDemo<DisplayMode>(new ResolutionControlLWJGL());
+    demo.prepareStart(nifty);
+    nifty.gotoScreen("demo");
+
+    setup.renderLoop(new RenderLoopCallback() {
+      
+      @Override
+      public boolean render(float deltaTime) {
+        boolean done = nifty.update();
+        nifty.render(true);
+        return done;
+      }
+    });
+
     LwjglInitHelper.renderLoop(nifty, null);
     LwjglInitHelper.destroy();
   }

@@ -7,7 +7,7 @@
   <!-- start screen -->
   <!-- +++++++++++++++++++++++++++++++++++++++ -->
   <screen id="start" controller="de.lessvoid.nifty.examples.helloworld.HelloWorldStartScreen">
-    <layer id="layer" backgroundColor="#003f" childLayout="center">
+    <layer id="layer" backgroundColor="#a004" childLayout="center">
       <panel id="panel" height="25%" width="35%" align="center" valign="center" backgroundColor="#f60f" childLayout="horizontal" visibleToMouse="true">
         <interact onClick="quit()"/>
         <effect>
@@ -16,7 +16,9 @@
           <onHover name="pulsate" scaleFactor="0.008" startColor="#f600" endColor="#ffff" post="true"/>
         </effect>
         <image filename="nifty-logo-150x150.png" />
+        <!-- 
         <text width="100%" height="100%" id="t" font="aurulent-sans-16.fnt" color="#ffff" text="Hello World!" align="left" valign="top" wrap="true" textHAlign="left" />
+         -->
       </panel>
     </layer>
   </screen>
