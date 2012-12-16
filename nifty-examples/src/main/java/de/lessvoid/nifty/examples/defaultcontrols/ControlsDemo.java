@@ -61,8 +61,8 @@ public class ControlsDemo<T> implements NiftyExample {
   }
 
   public static void main(final String[] args) throws Exception {
-    runStandard();
-    //runCore();
+    //runStandard();
+    runCore();
   }
 
   private static void runStandard() {

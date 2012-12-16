@@ -1,5 +1,10 @@
 package de.lessvoid.nifty.renderer.lwjgl2.render;
 
+import static org.lwjgl.opengl.GL11.glDisable;
+import static org.lwjgl.opengl.GL11.glEnable;
+import static org.lwjgl.opengl.GL31.GL_PRIMITIVE_RESTART;
+import static org.lwjgl.opengl.GL31.glPrimitiveRestartIndex;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
@@ -17,6 +22,7 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.util.glu.GLU;
 import org.lwjgl.util.vector.Matrix4f;
 
+import de.lessvoid.coregl.CoreElementVBO;
 import de.lessvoid.coregl.CoreMatrixFactory;
 import de.lessvoid.coregl.CoreRender;
 import de.lessvoid.coregl.CoreShader;
@@ -42,7 +48,9 @@ import de.lessvoid.resourceloader.ResourceLoader;
  * @author void
  */
 public class LwjglRenderDevice2 implements RenderDevice {
-  private static final int PRIMITIVE_SIZE = 6*12; // 6 vertices per quad and 12 vertex attributes per vertex (2xpos, 2xtexture, 4xcolor, 4xclipping)
+  private static final int PRIMITIVE_SIZE = 4*8; // 4 vertices per quad and 12 vertex attributes per vertex (2xpos, 2xtexture, 4xcolor, 4xclipping)
+  private static final int PRIMITIVE_RESTART_INDEX = 0xFFFF;
+
   private static Logger log = Logger.getLogger(LwjglRenderDevice2.class.getName());
   private static IntBuffer viewportBuffer = BufferUtils.createIntBuffer(4 * 4);
   private NiftyResourceLoader resourceLoader;
@@ -73,6 +81,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
   private final List<Batch> batches = new ArrayList<Batch>();
   private final ObjectPool<Batch> batchPool;
   private final ResourceLoader resourceLoader2 = new ResourceLoader();
+  private int completeClippedCounter;
 
   /**
    * The standard constructor. You'll use this in production code. Using this
@@ -84,7 +93,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
 
     modelViewProjection = CoreMatrixFactory.createOrtho(0, getWidth(), getHeight(), 0);
 
-    niftyShader = CoreShader.newShaderWithVertexAttributes("aVertex", "aColor", "aTexture", "aClipping");
+    niftyShader = CoreShader.newShaderWithVertexAttributes("aVertex", "aColor", "aTexture"/*, "aClipping"*/);
     niftyShader.fragmentShader("nifty.fs");
     niftyShader.vertexShader("nifty.vs");
     niftyShader.link();
@@ -92,10 +101,11 @@ public class LwjglRenderDevice2 implements RenderDevice {
     niftyShader.setUniformMatrix4f("uModelViewProjectionMatrix", modelViewProjection);
     niftyShader.setUniformi("uTex", 0);
 
+    final BatchMode batchMode = new BatchModeMapBuffer();
     batchPool = new ObjectPool<Batch>(10, new Factory<Batch>() {
       @Override
       public Batch createNew() {
-        return new Batch();
+        return new Batch(batchMode);
       }
     });
 
@@ -152,17 +162,17 @@ public class LwjglRenderDevice2 implements RenderDevice {
     GL11.glGetInteger(GL11.GL_VIEWPORT, viewportBuffer);
     viewportWidth = viewportBuffer.get(2);
     viewportHeight = viewportBuffer.get(3);
-    if (log.isLoggable(Level.INFO)) {
-      log.info("Viewport: " + viewportWidth + ", " + viewportHeight);
+    if (log.isLoggable(Level.FINEST)) {
+      log.finest("Viewport: " + viewportWidth + ", " + viewportHeight);
     }
   }
 
   public void beginFrame() {
-    log.fine("beginFrame()");
+    log.finest("beginFrame()");
 
     GL11.glEnable(GL11.GL_BLEND);
     GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-    setBlendMode(BlendMode.BLEND);
+    currentBlendMode = BlendMode.BLEND;
 
     //GL11.glDisable(GL11.GL_SCISSOR_TEST);
     currentClipping = false;
@@ -170,34 +180,44 @@ public class LwjglRenderDevice2 implements RenderDevice {
     currentClippingY0 = 0;
     currentClippingX1 = getWidth();
     currentClippingY1 = getHeight();
+    completeClippedCounter = 0;
 
     for (int i=0; i<batches.size(); i++) {
       batchPool.free(batches.get(i));
-      batches.get(i).reset();
+      //batches.get(i).reset();
     }
     batches.clear();
     batches.add(batchPool.allocate());
     currentBatch = batches.get(0);
-    currentBatch.reset();
+    currentBatch.begin();
 
     generator.getDone().bindTexture();
     glyphCount = 0;
   }
 
   public void endFrame() {
-    log.fine("endFrame");
+    log.finest("endFrame");
+    log.fine("completely clipped elements: " + completeClippedCounter);
 
     niftyShader.activate();
+
+    currentBatch.end();
+    
+    glEnable(GL_PRIMITIVE_RESTART);
+    glPrimitiveRestartIndex(PRIMITIVE_RESTART_INDEX);
 
     int totalPrimitiveCount = 0;
     for (int i=0; i<batches.size(); i++) {
       Batch batch = batches.get(i);
 
-      int primitiveCount = batch.send();
-      CoreRender.renderTriangles(primitiveCount*6);
+      int primitiveCount = batch.getPrimitiveCount();
+      batch.bind();
+      CoreRender.renderTriangleStripIndexed(batch.getIndexCount());
 
       totalPrimitiveCount += primitiveCount;
     }
+
+    glDisable(GL_PRIMITIVE_RESTART);
 
     frames++;
     long diff = System.currentTimeMillis() - time;
@@ -211,7 +231,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
       buffer.append(", Triangles: ");
       buffer.append(totalPrimitiveCount*2);
       buffer.append(", Vertices: ");
-      buffer.append(totalPrimitiveCount*6);
+      buffer.append(totalPrimitiveCount*4);
       buffer.append(", Glyph: ");
       buffer.append(glyphCount);
       buffer.append(", VBO-Size (sum): ");
@@ -239,60 +259,32 @@ public class LwjglRenderDevice2 implements RenderDevice {
   }
 
   public void clear() {
-    log.fine("clear()");
+    log.finest("clear()");
 
     GL11.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
   }
 
-  /**
-   * Create a new RenderImage.
-   * @param filename filename
-   * @param filterLinear linear filter the image
-   * @return RenderImage
-   */
   public RenderImage createImage(final String filename, final boolean filterLinear) {
     return new LwjglRenderImage2(generator, filename, filterLinear, resourceLoader2);
   }
 
-  /**
-   * Create a new RenderFont.
-   * @param filename filename
-   * @return RenderFont
-   */
   public RenderFont createFont(final String filename) {
     return new LwjglRenderFont2(filename, this, resourceLoader);
   }
 
-  /**
-   * Render a quad.
-   * @param x x
-   * @param y y
-   * @param width width
-   * @param height height
-   * @param color color
-   */
   public void renderQuad(final int x, final int y, final int width, final int height, final Color color) {
-    log.fine("renderQuad()");
+    log.finest("renderQuad()");
     addQuad(x, y, width, height, color, color, color, color, plainImage.getX(), plainImage.getY(), plainImage.getWidth(), plainImage.getHeight());
   }
 
   public void renderQuad(final int x, final int y, final int width, final int height, final Color topLeft, final Color topRight, final Color bottomRight, final Color bottomLeft) {
-    log.fine("renderQuad2()");
+    log.finest("renderQuad2()");
     addQuad(x, y, width, height, topLeft, topRight, bottomLeft, bottomRight, plainImage.getX(), plainImage.getY(), plainImage.getWidth(), plainImage.getHeight());
   }
 
-  /**
-   * Render the image using the given Box to specify the render attributes.
-   * @param x x
-   * @param y y
-   * @param width width
-   * @param height height
-   * @param color color
-   * @param scale scale
-   */
   public void renderImage(final RenderImage image, final int x, final int y, final int width, final int height, final Color c, final float scale) {
-    log.fine("renderImage()");
+    log.finest("renderImage()");
 
     if (width < 0) {
       log.warning("Attempt to render image with negative width");
@@ -304,21 +296,15 @@ public class LwjglRenderDevice2 implements RenderDevice {
     }
 
     LwjglRenderImage2 img = (LwjglRenderImage2) image;
-    addQuad(x, y, width, height, c, c, c, c, img.getX(), img.getY(), img.getWidth(), img.getHeight());
+    float centerX = x + width / 2.f;
+    float centerY = y + height / 2.f;
+    int ix = Math.round(centerX - (width * scale) / 2.f);
+    int iy = Math.round(centerY - (height * scale) / 2.f);
+    int iw = Math.round(width * scale);
+    int ih = Math.round(height * scale);
+    addQuad(ix, iy, iw, ih, c, c, c, c, img.getX(), img.getY(), img.getWidth(), img.getHeight());
   }
 
-  /**
-   * Render sub image.
-   * @param x x
-   * @param y y
-   * @param w w
-   * @param h h
-   * @param srcX x
-   * @param srcY y
-   * @param srcW w
-   * @param srcH h
-   * @param color color
-   */
   public void renderImage(
       final RenderImage image,
       final int x,
@@ -333,7 +319,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
       final float scale,
       final int centerX,
       final int centerY) {
-    log.fine("renderImage2()");
+    log.finest("renderImage2()");
 
     if (w < 0) {
       log.warning("Attempt to render image with negative width");
@@ -344,20 +330,17 @@ public class LwjglRenderDevice2 implements RenderDevice {
       return;
     }
 
+    int ix = Math.round(-scale * centerX + scale * x + centerX);
+    int iy = Math.round(-scale * centerY + scale * y + centerY);
+    int iw = Math.round(w * scale);
+    int ih = Math.round(h * scale);
+
     LwjglRenderImage2 img = (LwjglRenderImage2) image;
-    addQuad(x, y, w, h, c, c, c, c, img.getX() + srcX, img.getY() + srcY, srcW, srcH);
+    addQuad(ix, iy, iw, ih, c, c, c, c, img.getX() + srcX, img.getY() + srcY, srcW, srcH);
   }
 
-  /**
-   * render the text.
-   * @param text text
-   * @param x x
-   * @param y y
-   * @param color color
-   * @param fontSize size
-   */
   public void renderFont(final RenderFont font, final String text, final int x, final int y, final Color color, final float fontSizeX, final float fontSizeY) {
-    log.fine("renderFont()");
+    log.finest("renderFont()");
 /*
     if (!currentTexturing) {
       GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -372,15 +355,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
 */
   }
 
-  /**
-   * Enable clipping to the given region.
-   * @param x0 x0
-   * @param y0 y0
-   * @param x1 x1
-   * @param y1 y1
-   */
   public void enableClip(final int x0, final int y0, final int x1, final int y1) {
-    log.fine("enableClip()");
+    log.finest("enableClip()");
 
     if (currentClipping && currentClippingX0 == x0 && currentClippingY0 == y0 && currentClippingX1 == x1 && currentClippingY1 == y1) {
       return;
@@ -390,31 +366,23 @@ public class LwjglRenderDevice2 implements RenderDevice {
     currentClippingY0 = y0;
     currentClippingX1 = x1;
     currentClippingY1 = y1;
-    //GL11.glScissor(x0, getHeight() - y1, x1 - x0, y1 - y0);
-    //GL11.glEnable(GL11.GL_SCISSOR_TEST);
-    //addNewBatch("scissor");
   }
 
-  /**
-   * Disable Clip.
-   */
   public void disableClip() {
-    log.fine("disableClip()");
+    log.finest("disableClip()");
 
     if (!currentClipping) {
       return;
     }
-    //GL11.glDisable(GL11.GL_SCISSOR_TEST);
     currentClipping = false;
     currentClippingX0 = 0;
     currentClippingY0 = 0;
     currentClippingX1 = getWidth();
     currentClippingY1 = getHeight();
-    //addNewBatch("disableClip");
   }
 
   public void setBlendMode(final BlendMode renderMode) {
-    log.fine("setBlendMode()");
+    log.finest("setBlendMode()");
 
     if (renderMode.equals(currentBlendMode)) {
       return;
@@ -426,7 +394,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
     } else if (currentBlendMode.equals(BlendMode.MULIPLY)) {
       GL11.glBlendFunc(GL11.GL_DST_COLOR, GL11.GL_ZERO);
     }
-    addNewBatch("blendMode");
+    addNewBatch();
   }
 
   public MouseCursor createMouseCursor(final String filename, final int hotspotX, final int hotspotY) throws IOException {
@@ -473,10 +441,12 @@ public class LwjglRenderDevice2 implements RenderDevice {
     return new ImageIOImageData();
   }
 
-  private void addNewBatch(final String reason) {
-    //System.out.println(reason);
+  private void addNewBatch() {
+    currentBatch.end();
+
     currentBatch = batchPool.allocate();
     batches.add(currentBatch);
+    currentBatch.begin();
   }
 
   private void checkGLError() {
@@ -506,7 +476,11 @@ public class LwjglRenderDevice2 implements RenderDevice {
       final int textureWidth,
       final int textureHeight) {
     if (!currentBatch.canAddQuad()) {
-      addNewBatch("size");
+      addNewBatch();
+    }
+    if (isOutsideClippingRectangle(x, y, width, height)) {
+      completeClippedCounter++;
+      return;
     }
     currentBatch.addQuad(
         x,
@@ -527,43 +501,124 @@ public class LwjglRenderDevice2 implements RenderDevice {
         currentClippingY1);
   }
 
+  private boolean isOutsideClippingRectangle(final int x, final int y, final int width, final int height) {
+    if (x > currentClippingX1) {
+      return true;
+    }
+    if ((x + width) < currentClippingX0) {
+      return true;
+    }
+    if (y > currentClippingY1) {
+      return true;
+    }
+    if ((y + height) < currentClippingY0) {
+      return true;
+    }
+    return false;
+  }
+
+  private interface BatchMode {
+    FloatBuffer begin(final CoreVBO vbo);
+    void end(final CoreVBO vbo);
+  }
+
+  private class BatchModeMapBuffer implements BatchMode {
+
+    @Override
+    public FloatBuffer begin(final CoreVBO vbo) {
+      return vbo.getMappedBuffer();
+    }
+
+    @Override
+    public void end(final CoreVBO vbo) {
+      vbo.unmapBuffer();
+    }
+  }
+
+  private class BatchModeBufferData implements BatchMode {
+
+    @Override
+    public FloatBuffer begin(final CoreVBO vbo) {
+      vbo.getBuffer().rewind();
+      return vbo.getBuffer();
+    }
+
+    @Override
+    public void end(final CoreVBO vbo) {
+      vbo.getBuffer().rewind();
+      vbo.send();
+    }
+  }
+
   private class Batch {
+    private final int SIZE = 8000;
+
     private int primitiveCount;
     private final CoreVAO vao;
     private final CoreVBO vbo;
-    private final FloatBuffer vertexBuffer;
-    private final int SIZE = 10000;
+    private final CoreElementVBO elementVbo;
+    private FloatBuffer vertexBuffer;
+    private final BatchMode batchMode;
+    private int globalIndex;
+    private int indexCount;
+    private IntBuffer indexBuffer;
 
-    private Batch() {
+    private Batch(final BatchMode algorithm) {
+      batchMode = algorithm;
       vao = new CoreVAO();
       vao.bind();
+
+      elementVbo = CoreElementVBO.createStream(new int[SIZE/4]);
+      indexBuffer = elementVbo.getBuffer();
 
       vbo = CoreVBO.createStream(new float[SIZE]);
       vbo.bind();
 
-      vao.enableVertexAttributef(niftyShader.getAttribLocation("aVertex"), 2, 12, 0);
-      vao.enableVertexAttributef(niftyShader.getAttribLocation("aColor"), 4, 12, 2);
-      vao.enableVertexAttributef(niftyShader.getAttribLocation("aTexture"), 2, 12, 6);
-      vao.enableVertexAttributef(niftyShader.getAttribLocation("aClipping"), 4, 12, 8);
+      vao.enableVertexAttributef(niftyShader.getAttribLocation("aVertex"), 2, 8, 0);
+      vao.enableVertexAttributef(niftyShader.getAttribLocation("aColor"), 4, 8, 2);
+      vao.enableVertexAttributef(niftyShader.getAttribLocation("aTexture"), 2, 8, 6);
+      //vao.enableVertexAttributef(niftyShader.getAttribLocation("aClipping"), 4, 12, 8);
 
-      vertexBuffer = vbo.getBuffer();
       primitiveCount = 0;
+      globalIndex = 0;
+      indexCount = 0;
+      vao.unbind();
+    }
+
+    public int getIndexCount() {
+      return indexCount;
+    }
+
+    public void bind() {
+      vao.bind();
+    }
+
+    public int getPrimitiveCount() {
+      return primitiveCount;
+    }
+
+    public void begin() {
+      vao.bind();
+      vbo.bind();
+      vertexBuffer = batchMode.begin(vbo);
+      indexBuffer.rewind();
+      primitiveCount = 0;
+      globalIndex = 0;
+      indexCount = 0;
+      vao.unbind();
+    }
+
+    public void end() {
+      vbo.bind();
+      batchMode.end(vbo);
+
+      elementVbo.bind();
+      indexBuffer.rewind();
+      elementVbo.send();
     }
 
     public boolean canAddQuad() {
       return ((primitiveCount + 1) * PRIMITIVE_SIZE) < SIZE;
-    }
-
-    public void reset() {
-      vertexBuffer.rewind();
-      primitiveCount = 0;
-    }
-
-    public int send() {
-      vertexBuffer.rewind();
-      vao.bind();
-      vbo.send();
-      return primitiveCount;
     }
 
     private void addQuad(
@@ -584,86 +639,55 @@ public class LwjglRenderDevice2 implements RenderDevice {
         final float clipX1,
         final float clipY1) {
       float[] buffer = new float[PRIMITIVE_SIZE];
-      int index = 0;
-      buffer[index++] = x;
-      buffer[index++] = y + height;
-      buffer[index++] = color3.getRed();
-      buffer[index++] = color3.getGreen();
-      buffer[index++] = color3.getBlue();
-      buffer[index++] = color3.getAlpha();
-      buffer[index++] = textureX / (float) generator.getWidth();
-      buffer[index++] = (textureY + textureHeight) / (float) generator.getHeight();
-      buffer[index++] = clipX0; // x
-      buffer[index++] = clipY0; // y
-      buffer[index++] = clipX1; // z
-      buffer[index++] = clipY1; // w
+      int bufferIndex = 0;
+      int[] elementIndexBuffer = new int[5];
+      int elementIndexBufferIndex = 0;
 
-      buffer[index++] = x;
-      buffer[index++] = y;
-      buffer[index++] = color1.getRed();
-      buffer[index++] = color1.getGreen();
-      buffer[index++] = color1.getBlue();
-      buffer[index++] = color1.getAlpha();
-      buffer[index++] = textureX / (float) generator.getWidth();
-      buffer[index++] = textureY / (float) generator.getHeight();
-      buffer[index++] = clipX0;
-      buffer[index++] = clipY0;
-      buffer[index++] = clipX1;
-      buffer[index++] = clipY1;
+      buffer[bufferIndex++] = x;
+      buffer[bufferIndex++] = y + height;
+      buffer[bufferIndex++] = color3.getRed();
+      buffer[bufferIndex++] = color3.getGreen();
+      buffer[bufferIndex++] = color3.getBlue();
+      buffer[bufferIndex++] = color3.getAlpha();
+      buffer[bufferIndex++] = textureX / (float) generator.getWidth();
+      buffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
+      elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
-      buffer[index++] = x + width;
-      buffer[index++] = y + height;
-      buffer[index++] = color4.getRed();
-      buffer[index++] = color4.getGreen();
-      buffer[index++] = color4.getBlue();
-      buffer[index++] = color4.getAlpha();
-      buffer[index++] = (textureX + textureWidth) / (float) generator.getWidth();
-      buffer[index++] = (textureY + textureHeight) / (float) generator.getHeight();
-      buffer[index++] = clipX0;
-      buffer[index++] = clipY0;
-      buffer[index++] = clipX1;
-      buffer[index++] = clipY1;
+      buffer[bufferIndex++] = x + width;
+      buffer[bufferIndex++] = y + height;
+      buffer[bufferIndex++] = color4.getRed();
+      buffer[bufferIndex++] = color4.getGreen();
+      buffer[bufferIndex++] = color4.getBlue();
+      buffer[bufferIndex++] = color4.getAlpha();
+      buffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
+      buffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
+      elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
-      buffer[index++] = x;
-      buffer[index++] = y;
-      buffer[index++] = color1.getRed();
-      buffer[index++] = color1.getGreen();
-      buffer[index++] = color1.getBlue();
-      buffer[index++] = color1.getAlpha();
-      buffer[index++] = textureX / (float) generator.getWidth();
-      buffer[index++] = textureY / (float) generator.getHeight();
-      buffer[index++] = clipX0;
-      buffer[index++] = clipY0;
-      buffer[index++] = clipX1;
-      buffer[index++] = clipY1;
+      buffer[bufferIndex++] = x;
+      buffer[bufferIndex++] = y;
+      buffer[bufferIndex++] = color1.getRed();
+      buffer[bufferIndex++] = color1.getGreen();
+      buffer[bufferIndex++] = color1.getBlue();
+      buffer[bufferIndex++] = color1.getAlpha();
+      buffer[bufferIndex++] = textureX / (float) generator.getWidth();
+      buffer[bufferIndex++] = textureY / (float) generator.getHeight();
+      elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
-      buffer[index++] = x + width;
-      buffer[index++] = y + height;
-      buffer[index++] = color4.getRed();
-      buffer[index++] = color4.getGreen();
-      buffer[index++] = color4.getBlue();
-      buffer[index++] = color4.getAlpha();
-      buffer[index++] = (textureX + textureWidth) / (float) generator.getWidth();
-      buffer[index++] = (textureY + textureHeight) / (float) generator.getHeight();
-      buffer[index++] = clipX0;
-      buffer[index++] = clipY0;
-      buffer[index++] = clipX1;
-      buffer[index++] = clipY1;
+      buffer[bufferIndex++] = x + width;
+      buffer[bufferIndex++] = y;
+      buffer[bufferIndex++] = color2.getRed();
+      buffer[bufferIndex++] = color2.getGreen();
+      buffer[bufferIndex++] = color2.getBlue();
+      buffer[bufferIndex++] = color2.getAlpha();
+      buffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
+      buffer[bufferIndex++] = textureY / (float) generator.getHeight();
+      elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
+      elementIndexBuffer[elementIndexBufferIndex++] = PRIMITIVE_RESTART_INDEX;
 
-      buffer[index++] = x + width;
-      buffer[index++] = y;
-      buffer[index++] = color2.getRed();
-      buffer[index++] = color2.getGreen();
-      buffer[index++] = color2.getBlue();
-      buffer[index++] = color2.getAlpha();
-      buffer[index++] = (textureX + textureWidth) / (float) generator.getWidth();
-      buffer[index++] = textureY / (float) generator.getHeight();
-      buffer[index++] = clipX0;
-      buffer[index++] = clipY0;
-      buffer[index++] = clipX1;
-      buffer[index++] = clipY1;
+      indexCount += 5;
 
       vertexBuffer.put(buffer);
+      indexBuffer.put(elementIndexBuffer);
       primitiveCount++;
     }
   }

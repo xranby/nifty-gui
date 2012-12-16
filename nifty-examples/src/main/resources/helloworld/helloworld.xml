@@ -7,7 +7,7 @@
   <!-- start screen -->
   <!-- +++++++++++++++++++++++++++++++++++++++ -->
   <screen id="start" controller="de.lessvoid.nifty.examples.helloworld.HelloWorldStartScreen">
-    <layer id="layer" backgroundColor="#a004" childLayout="center">
+    <layer id="layer" backgroundColor="#f00f" childLayout="center">
       <panel id="panel" height="25%" width="35%" align="center" valign="center" backgroundColor="#f60f" childLayout="horizontal" visibleToMouse="true">
         <interact onClick="quit()"/>
         <effect>
