@@ -6,14 +6,21 @@ import static org.lwjgl.opengl.GL31.GL_PRIMITIVE_RESTART;
 import static org.lwjgl.opengl.GL31.glPrimitiveRestartIndex;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jglfont.BitmapFontException;
+import org.jglfont.BitmapFontFactory;
+import org.jglfont.spi.BitmapFontRenderer;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
 import org.lwjgl.input.Cursor;
@@ -26,6 +33,9 @@ import de.lessvoid.coregl.CoreElementVBO;
 import de.lessvoid.coregl.CoreMatrixFactory;
 import de.lessvoid.coregl.CoreRender;
 import de.lessvoid.coregl.CoreShader;
+import de.lessvoid.coregl.CoreTexture2D;
+import de.lessvoid.coregl.CoreTexture2D.ColorFormat;
+import de.lessvoid.coregl.CoreTexture2D.ResizeFilter;
 import de.lessvoid.coregl.CoreTextureAtlasGenerator;
 import de.lessvoid.coregl.CoreVAO;
 import de.lessvoid.coregl.CoreVBO;
@@ -42,6 +52,9 @@ import de.lessvoid.nifty.tools.ObjectPool;
 import de.lessvoid.nifty.tools.ObjectPool.Factory;
 import de.lessvoid.nifty.tools.resourceloader.NiftyResourceLoader;
 import de.lessvoid.resourceloader.ResourceLoader;
+import de.lessvoid.simpleimageloader.SimpleImageLoader;
+import de.lessvoid.simpleimageloader.SimpleImageLoaderConfig;
+import de.lessvoid.textureatlas.TextureAtlasGenerator.Result;
 
 /**
  * Lwjgl RenderDevice Implementation.
@@ -83,6 +96,11 @@ public class LwjglRenderDevice2 implements RenderDevice {
   private final ResourceLoader resourceLoader2 = new ResourceLoader();
   private int completeClippedCounter;
 
+  private final BitmapFontFactory factory;
+  private final Color textColor = new Color(0.f, 0.f, 0.f, 0.f);
+  private float[] primitiveBuffer = new float[PRIMITIVE_SIZE];
+  private int[] elementIndexBuffer = new int[5];
+
   /**
    * The standard constructor. You'll use this in production code. Using this
    * constructor will configure the RenderDevice to not log FPS on System.out.
@@ -102,7 +120,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
     niftyShader.setUniformi("uTex", 0);
 
     final BatchMode batchMode = new BatchModeMapBuffer();
-    batchPool = new ObjectPool<Batch>(10, new Factory<Batch>() {
+    batchPool = new ObjectPool<Batch>(2, new Factory<Batch>() {
       @Override
       public Batch createNew() {
         return new Batch(batchMode);
@@ -113,6 +131,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
     plainImage = (LwjglRenderImage2) createImage("nifty.tga", false);
 
     niftyShader.activate();
+    factory = new BitmapFontFactory(new FontRenderer(generator));
   }
 
   /**
@@ -184,14 +203,13 @@ public class LwjglRenderDevice2 implements RenderDevice {
 
     for (int i=0; i<batches.size(); i++) {
       batchPool.free(batches.get(i));
-      //batches.get(i).reset();
     }
     batches.clear();
     batches.add(batchPool.allocate());
     currentBatch = batches.get(0);
     currentBatch.begin();
 
-    generator.getDone().bindTexture();
+    generator.getTargetTexture().bindTexture();
     glyphCount = 0;
   }
 
@@ -246,7 +264,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
       frames = 0;
     }
     if (displayFPS) {
-     // renderFont(fpsFont, buffer.toString(), 10, getHeight() - fpsFont.getHeight() - 10, Color.WHITE, 1.0f, 1.0f);
+     //renderFont(fpsFont, buffer.toString(), 10, getHeight() - fpsFont.getHeight() - 10, Color.WHITE, 1.0f, 1.0f);
     }
 
     // currently the RenderDevice interface does not support a way to be notified when the resolution is changed
@@ -270,7 +288,11 @@ public class LwjglRenderDevice2 implements RenderDevice {
   }
 
   public RenderFont createFont(final String filename) {
-    return new LwjglRenderFont2(filename, this, resourceLoader);
+    try {
+      return new LwjglRenderFont2(filename, factory, resourceLoader);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   public void renderQuad(final int x, final int y, final int width, final int height, final Color color) {
@@ -339,20 +361,11 @@ public class LwjglRenderDevice2 implements RenderDevice {
     addQuad(ix, iy, iw, ih, c, c, c, c, img.getX() + srcX, img.getY() + srcY, srcW, srcH);
   }
 
-  public void renderFont(final RenderFont font, final String text, final int x, final int y, final Color color, final float fontSizeX, final float fontSizeY) {
+  public void renderFont(final RenderFont font, final String text, final int x, final int y, final Color color, final float sizeX, final float sizeY) {
     log.finest("renderFont()");
-/*
-    if (!currentTexturing) {
-      GL11.glEnable(GL11.GL_TEXTURE_2D);
-      currentTexturing = true;
-    }
-    setBlendMode(BlendMode.BLEND);
-    if (color == null) {
-      glyphCount += ((LwjglRenderFont)font).getFont().drawStringWithSize(x, y, text, fontSizeX, fontSizeY);
-    } else {
-      glyphCount += ((LwjglRenderFont)font).getFont().renderWithSizeAndColor(x, y, text, fontSizeX, fontSizeY, color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
-    }
-*/
+
+    LwjglRenderFont2 renderFont = (LwjglRenderFont2) font;
+    renderFont.getBitmapFont().renderText(x, y, text, sizeX, sizeY, color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
   }
 
   public void enableClip(final int x0, final int y0, final int x1, final int y1) {
@@ -551,7 +564,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
   }
 
   private class Batch {
-    private final int SIZE = 8000;
+    private final int SIZE = 64*1024;
 
     private int primitiveCount;
     private final CoreVAO vao;
@@ -577,7 +590,6 @@ public class LwjglRenderDevice2 implements RenderDevice {
       vao.enableVertexAttributef(niftyShader.getAttribLocation("aVertex"), 2, 8, 0);
       vao.enableVertexAttributef(niftyShader.getAttribLocation("aColor"), 4, 8, 2);
       vao.enableVertexAttributef(niftyShader.getAttribLocation("aTexture"), 2, 8, 6);
-      //vao.enableVertexAttributef(niftyShader.getAttribLocation("aClipping"), 4, 12, 8);
 
       primitiveCount = 0;
       globalIndex = 0;
@@ -638,57 +650,182 @@ public class LwjglRenderDevice2 implements RenderDevice {
         final float clipY0,
         final float clipX1,
         final float clipY1) {
-      float[] buffer = new float[PRIMITIVE_SIZE];
       int bufferIndex = 0;
-      int[] elementIndexBuffer = new int[5];
       int elementIndexBufferIndex = 0;
 
-      buffer[bufferIndex++] = x;
-      buffer[bufferIndex++] = y + height;
-      buffer[bufferIndex++] = color3.getRed();
-      buffer[bufferIndex++] = color3.getGreen();
-      buffer[bufferIndex++] = color3.getBlue();
-      buffer[bufferIndex++] = color3.getAlpha();
-      buffer[bufferIndex++] = textureX / (float) generator.getWidth();
-      buffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = x;
+      primitiveBuffer[bufferIndex++] = y + height;
+      primitiveBuffer[bufferIndex++] = color3.getRed();
+      primitiveBuffer[bufferIndex++] = color3.getGreen();
+      primitiveBuffer[bufferIndex++] = color3.getBlue();
+      primitiveBuffer[bufferIndex++] = color3.getAlpha();
+      primitiveBuffer[bufferIndex++] = textureX / (float) generator.getWidth();
+      primitiveBuffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
-      buffer[bufferIndex++] = x + width;
-      buffer[bufferIndex++] = y + height;
-      buffer[bufferIndex++] = color4.getRed();
-      buffer[bufferIndex++] = color4.getGreen();
-      buffer[bufferIndex++] = color4.getBlue();
-      buffer[bufferIndex++] = color4.getAlpha();
-      buffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
-      buffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = x + width;
+      primitiveBuffer[bufferIndex++] = y + height;
+      primitiveBuffer[bufferIndex++] = color4.getRed();
+      primitiveBuffer[bufferIndex++] = color4.getGreen();
+      primitiveBuffer[bufferIndex++] = color4.getBlue();
+      primitiveBuffer[bufferIndex++] = color4.getAlpha();
+      primitiveBuffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
+      primitiveBuffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
-      buffer[bufferIndex++] = x;
-      buffer[bufferIndex++] = y;
-      buffer[bufferIndex++] = color1.getRed();
-      buffer[bufferIndex++] = color1.getGreen();
-      buffer[bufferIndex++] = color1.getBlue();
-      buffer[bufferIndex++] = color1.getAlpha();
-      buffer[bufferIndex++] = textureX / (float) generator.getWidth();
-      buffer[bufferIndex++] = textureY / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = x;
+      primitiveBuffer[bufferIndex++] = y;
+      primitiveBuffer[bufferIndex++] = color1.getRed();
+      primitiveBuffer[bufferIndex++] = color1.getGreen();
+      primitiveBuffer[bufferIndex++] = color1.getBlue();
+      primitiveBuffer[bufferIndex++] = color1.getAlpha();
+      primitiveBuffer[bufferIndex++] = textureX / (float) generator.getWidth();
+      primitiveBuffer[bufferIndex++] = textureY / (float) generator.getHeight();
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
-      buffer[bufferIndex++] = x + width;
-      buffer[bufferIndex++] = y;
-      buffer[bufferIndex++] = color2.getRed();
-      buffer[bufferIndex++] = color2.getGreen();
-      buffer[bufferIndex++] = color2.getBlue();
-      buffer[bufferIndex++] = color2.getAlpha();
-      buffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
-      buffer[bufferIndex++] = textureY / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = x + width;
+      primitiveBuffer[bufferIndex++] = y;
+      primitiveBuffer[bufferIndex++] = color2.getRed();
+      primitiveBuffer[bufferIndex++] = color2.getGreen();
+      primitiveBuffer[bufferIndex++] = color2.getBlue();
+      primitiveBuffer[bufferIndex++] = color2.getAlpha();
+      primitiveBuffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
+      primitiveBuffer[bufferIndex++] = textureY / (float) generator.getHeight();
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
       elementIndexBuffer[elementIndexBufferIndex++] = PRIMITIVE_RESTART_INDEX;
 
       indexCount += 5;
 
-      vertexBuffer.put(buffer);
+      vertexBuffer.put(primitiveBuffer);
       indexBuffer.put(elementIndexBuffer);
       primitiveCount++;
+    }
+  }
+
+  private class FontRenderer implements BitmapFontRenderer {
+    private final SimpleImageLoader loader = new SimpleImageLoader();
+    private final CoreTextureAtlasGenerator atlas;
+    private final Map<Integer, Result> textureInfos = new HashMap<Integer, Result>();
+    private final Map<Character, CharRenderInfo> characterIndices = new Hashtable<Character, CharRenderInfo>();
+
+    public FontRenderer(final CoreTextureAtlasGenerator atlas) {
+      this.atlas = atlas;
+    }
+
+    @Override
+    public void registerBitmap(final int bitmapId, final InputStream data, final String filename) throws IOException {
+      de.lessvoid.simpleimageloader.ImageData imageData = loader.load(filename, data, new SimpleImageLoaderConfig().forceAlpha());
+      Result result = atlas.addImage(createTexture(imageData), filename, 0);
+      if (result == null) {
+        throw new BitmapFontException("failed to add image to texture atlas: " + filename);
+      }
+      textureInfos.put(bitmapId, result);
+    }
+
+    @Override
+    public void registerGlyph(
+        final int bitmapId,
+        final char c,
+        final int xoff,
+        final int yoff,
+        final int w,
+        final int h,
+        final float u0,
+        final float v0,
+        final float u1,
+        final float v1) {
+      Result textureInfo = textureInfos.get(bitmapId);
+      int atlasX0 = textureInfo.getX();
+      int atlasY0 = textureInfo.getY();
+      int atlasImageW = textureInfo.getOriginalImageWidth();
+      int atlasImageH = textureInfo.getOriginalImageHeight();
+      int u = (int) (atlasX0 + u0 * atlasImageW);
+      int v = (int) (atlasY0 + v0 * atlasImageH);
+      int uw = (int) (atlasX0 + u1 * atlasImageW);
+      int vw = (int) (atlasY0 + v1 * atlasImageH);
+
+      characterIndices.put(c, new CharRenderInfo(xoff, yoff, w, h, u, v, uw, vw));
+    }
+
+    @Override
+    public void prepare() {
+    }
+
+    @Override
+    public void beforeRender() {
+    }
+
+    @Override
+    public void render(
+        final int bitmapId,
+        final int x,
+        final int y,
+        final char c,
+        final float sx,
+        final float sy,
+        final float r,
+        final float g,
+        final float b,
+        final float a) {
+      textColor.setRed(r);
+      textColor.setGreen(g);
+      textColor.setBlue(b);
+      textColor.setAlpha(a);
+      characterIndices.get(c).renderQuad(x, y, sx, sy, textColor);
+    }
+
+    @Override
+    public void afterRender() {
+    }
+
+    private CoreTexture2D createTexture(final de.lessvoid.simpleimageloader.ImageData imageData) {
+      return new CoreTexture2D(ColorFormat.RGBA, imageData.getWidth(), imageData.getHeight(), imageData.getData(), ResizeFilter.Linear);
+    }
+  }
+
+  private class CharRenderInfo {
+    final int xoff;
+    final int yoff;
+    final int w;
+    final int h;
+    final int u0;
+    final int v0;
+    final int u1;
+    final int v1;
+
+    public CharRenderInfo(
+        final int xoff,
+        final int yoff,
+        final int w,
+        final int h,
+        final int u0,
+        final int v0,
+        final int u1,
+        final int v1) {
+      this.xoff = xoff;
+      this.yoff = yoff;
+      this.w = w;
+      this.h = h;
+      this.u0 = u0;
+      this.v0 = v0;
+      this.u1 = u1;
+      this.v1 = v1;
+    }
+
+    public void renderQuad(final int x, final int y, final float sx, final float sy, final Color textColor) {
+      addQuad(
+          x + xoff,
+          y + yoff,
+          w,
+          h,
+          textColor,
+          textColor,
+          textColor,
+          textColor,
+          u0,
+          v0,
+          u1 - u0,
+          v1 - v0);
     }
   }
 }

@@ -1,47 +1,48 @@
 package de.lessvoid.nifty.renderer.lwjgl2.render;
 
-import de.lessvoid.nifty.renderer.lwjgl2.render.font.CharacterInfo;
-import de.lessvoid.nifty.renderer.lwjgl2.render.font.Font;
-import de.lessvoid.nifty.spi.render.RenderDevice;
+import java.io.IOException;
+
+import org.jglfont.BitmapFont;
+import org.jglfont.BitmapFontFactory;
+
 import de.lessvoid.nifty.spi.render.RenderFont;
 import de.lessvoid.nifty.tools.resourceloader.NiftyResourceLoader;
 
 public class LwjglRenderFont2 implements RenderFont {
-  private Font font;
+  private final BitmapFont font;
 
-  public LwjglRenderFont2(final String name, final RenderDevice device, final NiftyResourceLoader resourceLoader) {
-    //font = new Font(device, resourceLoader);
-    //font.init(name);
+  public LwjglRenderFont2(
+      final String name,
+      final BitmapFontFactory factory,
+      final NiftyResourceLoader resourceLoader) throws IOException {
+    font = factory.loadFont(resourceLoader.getResourceAsStream(name));
   }
 
+  @Override
   public int getHeight() {
-    return 10;//return font.getHeight();
+    return font.getHeight();
   }
 
+  @Override
   public int getWidth(final String text) {
-    return 100;//return font.getStringWidth(text, 1.f);
+    return font.getStringWidthInternal(text);
   }
 
+  @Override
   public int getWidth(final String text, final float size) {
-    return 100;//return font.getStringWidth(text, size);
+    return font.getStringWidthInternal(text, size);
   }
 
-  public static int getKerning(final CharacterInfo charInfoC, final char nextc) {
-    Integer kern = charInfoC.getKerning().get(Character.valueOf(nextc));
-    if (kern != null) {
-      return kern.intValue();
-    }
-    return 0;
-  }
-
+  @Override
   public int getCharacterAdvance(final char currentCharacter, final char nextCharacter, final float size) {
-    return 1;//font.getCharacterWidth(currentCharacter, nextCharacter, size);
+    return font.getCharacterWidth(currentCharacter, nextCharacter, size);
   }
-/*
-  public Font getFont() {
+
+  @Override
+  public void dispose() {
+  }
+
+  public BitmapFont getBitmapFont() {
     return font;
   }
-*/
-  public void dispose() {
-  }  
 }

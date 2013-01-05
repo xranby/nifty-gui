@@ -24,7 +24,7 @@ public class LwjglRenderImage2 implements RenderImage {
 
     SimpleImageLoader loader = new SimpleImageLoader();
     try {
-      de.lessvoid.simpleimageloader.ImageData data = loader.load(name, resourceLoader.getResourceAsStream(name), new SimpleImageLoaderConfig().flipped().forceAlpha());
+      de.lessvoid.simpleimageloader.ImageData data = loader.load(name, resourceLoader.getResourceAsStream(name), new SimpleImageLoaderConfig().forceAlpha());
       CoreTexture2D texture = new CoreTexture2D(ColorFormat.RGBA, data.getWidth(), data.getHeight(), data.getData(), ResizeFilter.Linear);
       Result result = generator.addImage(texture, name, 5);
       x = result.getX();
