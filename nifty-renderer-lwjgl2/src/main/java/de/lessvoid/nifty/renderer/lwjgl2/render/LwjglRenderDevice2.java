@@ -659,8 +659,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
       primitiveBuffer[bufferIndex++] = color3.getGreen();
       primitiveBuffer[bufferIndex++] = color3.getBlue();
       primitiveBuffer[bufferIndex++] = color3.getAlpha();
-      primitiveBuffer[bufferIndex++] = textureX / (float) generator.getWidth();
-      primitiveBuffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = calcU(textureX, generator.getWidth());
+      primitiveBuffer[bufferIndex++] = calcU(textureY + textureHeight - 1, generator.getHeight());
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
       primitiveBuffer[bufferIndex++] = x + width;
@@ -669,8 +669,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
       primitiveBuffer[bufferIndex++] = color4.getGreen();
       primitiveBuffer[bufferIndex++] = color4.getBlue();
       primitiveBuffer[bufferIndex++] = color4.getAlpha();
-      primitiveBuffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
-      primitiveBuffer[bufferIndex++] = (textureY + textureHeight) / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = calcU(textureX + textureWidth - 1, generator.getWidth());
+      primitiveBuffer[bufferIndex++] = calcU(textureY + textureHeight - 1, generator.getHeight());
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
       primitiveBuffer[bufferIndex++] = x;
@@ -679,8 +679,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
       primitiveBuffer[bufferIndex++] = color1.getGreen();
       primitiveBuffer[bufferIndex++] = color1.getBlue();
       primitiveBuffer[bufferIndex++] = color1.getAlpha();
-      primitiveBuffer[bufferIndex++] = textureX / (float) generator.getWidth();
-      primitiveBuffer[bufferIndex++] = textureY / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = calcU(textureX, generator.getWidth());
+      primitiveBuffer[bufferIndex++] = calcU(textureY, generator.getHeight());
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
 
       primitiveBuffer[bufferIndex++] = x + width;
@@ -689,8 +689,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
       primitiveBuffer[bufferIndex++] = color2.getGreen();
       primitiveBuffer[bufferIndex++] = color2.getBlue();
       primitiveBuffer[bufferIndex++] = color2.getAlpha();
-      primitiveBuffer[bufferIndex++] = (textureX + textureWidth) / (float) generator.getWidth();
-      primitiveBuffer[bufferIndex++] = textureY / (float) generator.getHeight();
+      primitiveBuffer[bufferIndex++] = calcU(textureX + textureWidth - 1, generator.getWidth());
+      primitiveBuffer[bufferIndex++] = calcU(textureY, generator.getHeight());
       elementIndexBuffer[elementIndexBufferIndex++] = globalIndex++;
       elementIndexBuffer[elementIndexBufferIndex++] = PRIMITIVE_RESTART_INDEX;
 
@@ -700,31 +700,34 @@ public class LwjglRenderDevice2 implements RenderDevice {
       indexBuffer.put(elementIndexBuffer);
       primitiveCount++;
     }
+
+    private float calcU(final int value, final int max) {
+      return (0.5f / (float) max) + (value / (float) max);
+    }
   }
 
   private class FontRenderer implements BitmapFontRenderer {
     private final SimpleImageLoader loader = new SimpleImageLoader();
     private final CoreTextureAtlasGenerator atlas;
-    private final Map<Integer, Result> textureInfos = new HashMap<Integer, Result>();
-    private final Map<Character, CharRenderInfo> characterIndices = new Hashtable<Character, CharRenderInfo>();
+    private final Map<String, BitmapInfo> textureInfos = new HashMap<String, BitmapInfo>();
 
     public FontRenderer(final CoreTextureAtlasGenerator atlas) {
       this.atlas = atlas;
     }
 
     @Override
-    public void registerBitmap(final int bitmapId, final InputStream data, final String filename) throws IOException {
+    public void registerBitmap(final String bitmapId, final InputStream data, final String filename) throws IOException {
       de.lessvoid.simpleimageloader.ImageData imageData = loader.load(filename, data, new SimpleImageLoaderConfig().forceAlpha());
       Result result = atlas.addImage(createTexture(imageData), filename, 0);
       if (result == null) {
         throw new BitmapFontException("failed to add image to texture atlas: " + filename);
       }
-      textureInfos.put(bitmapId, result);
+      textureInfos.put(bitmapId, new BitmapInfo(result));
     }
 
     @Override
     public void registerGlyph(
-        final int bitmapId,
+        final String bitmapId,
         final char c,
         final int xoff,
         final int yoff,
@@ -734,17 +737,15 @@ public class LwjglRenderDevice2 implements RenderDevice {
         final float v0,
         final float u1,
         final float v1) {
-      Result textureInfo = textureInfos.get(bitmapId);
+      BitmapInfo textureInfo = textureInfos.get(bitmapId);
       int atlasX0 = textureInfo.getX();
       int atlasY0 = textureInfo.getY();
       int atlasImageW = textureInfo.getOriginalImageWidth();
       int atlasImageH = textureInfo.getOriginalImageHeight();
       int u = (int) (atlasX0 + u0 * atlasImageW);
       int v = (int) (atlasY0 + v0 * atlasImageH);
-      int uw = (int) (atlasX0 + u1 * atlasImageW);
-      int vw = (int) (atlasY0 + v1 * atlasImageH);
 
-      characterIndices.put(c, new CharRenderInfo(xoff, yoff, w, h, u, v, uw, vw));
+      textureInfo.addCharRenderInfo(c, new CharRenderInfo(xoff, yoff, w, h, u, v));
     }
 
     @Override
@@ -757,7 +758,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
 
     @Override
     public void render(
-        final int bitmapId,
+        final String bitmapId,
         final int x,
         final int y,
         final char c,
@@ -771,7 +772,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
       textColor.setGreen(g);
       textColor.setBlue(b);
       textColor.setAlpha(a);
-      characterIndices.get(c).renderQuad(x, y, sx, sy, textColor);
+      textureInfos.get(bitmapId).renderCharacter(c, x, y, sx, sy, textColor);
     }
 
     @Override
@@ -790,8 +791,6 @@ public class LwjglRenderDevice2 implements RenderDevice {
     final int h;
     final int u0;
     final int v0;
-    final int u1;
-    final int v1;
 
     public CharRenderInfo(
         final int xoff,
@@ -799,17 +798,13 @@ public class LwjglRenderDevice2 implements RenderDevice {
         final int w,
         final int h,
         final int u0,
-        final int v0,
-        final int u1,
-        final int v1) {
+        final int v0) {
       this.xoff = xoff;
       this.yoff = yoff;
       this.w = w;
       this.h = h;
       this.u0 = u0;
       this.v0 = v0;
-      this.u1 = u1;
-      this.v1 = v1;
     }
 
     public void renderQuad(final int x, final int y, final float sx, final float sy, final Color textColor) {
@@ -824,8 +819,42 @@ public class LwjglRenderDevice2 implements RenderDevice {
           textColor,
           u0,
           v0,
-          u1 - u0,
-          v1 - v0);
+          w,
+          h);
     }
   }
+
+  private static class BitmapInfo {
+    private final Result result;
+    private final Map<Character, CharRenderInfo> characterIndices = new Hashtable<Character, CharRenderInfo>();
+
+    public BitmapInfo(final Result result) {
+      this.result = result;
+    }
+
+    public void renderCharacter(char c, int x, int y, float sx, float sy, Color textColor) {
+      characterIndices.get(c).renderQuad(x, y, sx, sy, textColor);
+    }
+
+    public int getX() {
+      return result.getX();
+    }
+
+    public int getY() {
+      return result.getY();
+    }
+
+    public int getOriginalImageWidth() {
+      return result.getOriginalImageWidth();
+    }
+
+    public int getOriginalImageHeight() {
+      return result.getOriginalImageHeight();
+    }
+
+    public void addCharRenderInfo(final Character c, final CharRenderInfo renderInfo) {
+      this.characterIndices.put(c, renderInfo);
+    }
+  }
+
 }
