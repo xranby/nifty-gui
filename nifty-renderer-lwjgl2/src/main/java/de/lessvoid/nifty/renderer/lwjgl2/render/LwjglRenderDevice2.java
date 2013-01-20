@@ -1,5 +1,6 @@
 package de.lessvoid.nifty.renderer.lwjgl2.render;
 
+import static org.lwjgl.opengl.GL11.GL_BLEND;
 import static org.lwjgl.opengl.GL11.glDisable;
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL31.GL_PRIMITIVE_RESTART;
@@ -217,10 +218,13 @@ public class LwjglRenderDevice2 implements RenderDevice {
     log.finest("endFrame");
     log.fine("completely clipped elements: " + completeClippedCounter);
 
-    niftyShader.activate();
+    if (displayFPS) {
+      renderFont(fpsFont, buffer.toString(), 10, getHeight() - fpsFont.getHeight() - 10, Color.RED, 1.0f, 1.0f);
+    }
 
+    niftyShader.activate();
     currentBatch.end();
-    
+
     glEnable(GL_PRIMITIVE_RESTART);
     glPrimitiveRestartIndex(PRIMITIVE_RESTART_INDEX);
 
@@ -261,10 +265,8 @@ public class LwjglRenderDevice2 implements RenderDevice {
       if (logFPS) {
         System.out.println(buffer.toString());
       }
+
       frames = 0;
-    }
-    if (displayFPS) {
-     //renderFont(fpsFont, buffer.toString(), 10, getHeight() - fpsFont.getHeight() - 10, Color.WHITE, 1.0f, 1.0f);
     }
 
     // currently the RenderDevice interface does not support a way to be notified when the resolution is changed
@@ -284,14 +286,22 @@ public class LwjglRenderDevice2 implements RenderDevice {
   }
 
   public RenderImage createImage(final String filename, final boolean filterLinear) {
-    return new LwjglRenderImage2(generator, filename, filterLinear, resourceLoader2);
+    // we need to disable blending in here to get the original image into the texture atlas without any blending
+    glDisable(GL_BLEND);
+    LwjglRenderImage2 result = new LwjglRenderImage2(generator, filename, filterLinear, resourceLoader2);
+    glEnable(GL_BLEND);
+    return result;
   }
 
   public RenderFont createFont(final String filename) {
     try {
+      // we need to disable blending in here to get the original image into the texture atlas without any blending
+      glDisable(GL_BLEND);
       return new LwjglRenderFont2(filename, factory, resourceLoader);
     } catch (IOException e) {
       throw new RuntimeException(e);
+    } finally {
+      glEnable(GL_BLEND);
     }
   }
 
