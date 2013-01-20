@@ -486,10 +486,10 @@ public class LwjglRenderDevice2 implements RenderDevice {
   }
 
   private void addQuad(
-      final int x,
-      final int y,
-      final int width,
-      final int height,
+      final float x,
+      final float y,
+      final float width,
+      final float height,
       final Color color1,
       final Color color2,
       final Color color3,
@@ -524,7 +524,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
         currentClippingY1);
   }
 
-  private boolean isOutsideClippingRectangle(final int x, final int y, final int width, final int height) {
+  private boolean isOutsideClippingRectangle(final float x, final float y, final float width, final float height) {
     if (x > currentClippingX1) {
       return true;
     }
@@ -644,10 +644,10 @@ public class LwjglRenderDevice2 implements RenderDevice {
     }
 
     private void addQuad(
-        final int x,
-        final int y,
-        final int width,
-        final int height,
+        final float x,
+        final float y,
+        final float width,
+        final float height,
         final Color color1,
         final Color color2,
         final Color color3,
@@ -783,6 +783,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
       textColor.setBlue(b);
       textColor.setAlpha(a);
       textureInfos.get(bitmapId).renderCharacter(c, x, y, sx, sy, textColor);
+      glyphCount++;
     }
 
     @Override
@@ -819,10 +820,10 @@ public class LwjglRenderDevice2 implements RenderDevice {
 
     public void renderQuad(final int x, final int y, final float sx, final float sy, final Color textColor) {
       addQuad(
-          x + xoff,
-          y + yoff,
-          w,
-          h,
+          x + (float) Math.floor(xoff * sx),
+          y + (float) Math.floor(yoff * sy),
+          (w * sx),
+          (h * sy),
           textColor,
           textColor,
           textColor,
