@@ -32,6 +32,11 @@ public class Color {
   public static final Color BLACK = new Color(0.0f, 0.0f, 0.0f, 1.0f);
 
   /**
+   * a red color.
+   */
+  public static final Color RED = new Color(1.0f, 0.0f, 0.0f, 1.0f);
+
+  /**
    * max value for conversion.
    */
   private static final float MAX_INT_VALUE = 255.0f;
