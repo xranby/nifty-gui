@@ -194,7 +194,6 @@ public class LwjglRenderDevice2 implements RenderDevice {
     GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
     currentBlendMode = BlendMode.BLEND;
 
-    //GL11.glDisable(GL11.GL_SCISSOR_TEST);
     currentClipping = false;
     currentClippingX0 = 0;
     currentClippingY0 = 0;
@@ -501,10 +500,6 @@ public class LwjglRenderDevice2 implements RenderDevice {
     if (!currentBatch.canAddQuad()) {
       addNewBatch();
     }
-    if (isOutsideClippingRectangle(x, y, width, height)) {
-      completeClippedCounter++;
-      return;
-    }
     currentBatch.addQuad(
         x,
         y,
@@ -517,11 +512,7 @@ public class LwjglRenderDevice2 implements RenderDevice {
         textureX,
         textureY,
         textureWidth,
-        textureHeight,
-        currentClippingX0,
-        currentClippingY0,
-        currentClippingX1,
-        currentClippingY1);
+        textureHeight);
   }
 
   private boolean isOutsideClippingRectangle(final float x, final float y, final float width, final float height) {
@@ -535,6 +526,20 @@ public class LwjglRenderDevice2 implements RenderDevice {
       return true;
     }
     if ((y + height) < currentClippingY0) {
+      return true;
+    }
+    return false;
+  }
+
+  private boolean isInsideClippingRectangle(final float x, final float y, final float width, final float height) {
+    if (x >= currentClippingX0 &&
+        x <= currentClippingX1 &&
+        (x + width) >= currentClippingX0 &&
+        (x + width) <= currentClippingX1 &&
+        y >= currentClippingY0 &&
+        y <= currentClippingY1 &&
+        (y + height) >= currentClippingY0 &&
+        (y + height) <= currentClippingY1) {
       return true;
     }
     return false;
@@ -655,11 +660,77 @@ public class LwjglRenderDevice2 implements RenderDevice {
         final int textureX,
         final int textureY,
         final int textureWidth,
-        final int textureHeight,
-        final float clipX0,
-        final float clipY0,
-        final float clipX1,
-        final float clipY1) {
+        final int textureHeight) {
+      // if this quad is completely outside the clipping area we don't need to render it at all
+      if (isOutsideClippingRectangle(x, y, width, height)) {
+        completeClippedCounter++;
+        return;
+      }
+
+      // if this quad is completely inside the clipping area we can simply render the quad
+      if (isInsideClippingRectangle(x, y, width, height)) {
+        addQuadInternal(x, y, width, height, color1, color2, color3, color4, textureX, textureY, textureWidth, textureHeight);
+        return;
+      }
+
+      // we need to clip
+      float newX;
+      float newY;
+      float newWidth;
+      float newHeight;
+      int newTextureX = textureX;
+      int newTextureY = textureY;
+      int newTextureWidth = textureWidth;
+      int newTextureHeight = textureHeight;
+
+      if (x >= currentClippingX0) {
+        newX = x;
+        newTextureX = textureX;
+      } else {
+        newX = currentClippingX0;
+        newTextureX = (int) (textureX + (currentClippingX0 - x) / width * textureWidth);
+      }
+
+      if (y >= currentClippingY0) {
+        newY = y;
+        newTextureY = textureY;
+      } else {
+        newY = currentClippingY0;
+        newTextureY = (int) (textureY + (currentClippingY0 - y) / height * textureHeight);
+      }
+
+      if (x + width <= currentClippingX1) {
+        newWidth = (x + width) - newX;
+        newTextureWidth = (textureX + textureWidth) - newTextureX;
+      } else {
+        newWidth = currentClippingX1 - newX;
+        newTextureWidth = (int) (newWidth / width * textureWidth);
+      }
+
+      if (y + height <= currentClippingY1) {
+        newHeight = y + height - newY;
+        newTextureHeight = (textureY + textureHeight) - newTextureY;
+      } else {
+        newHeight = currentClippingY1 - newY;
+        newTextureHeight = (int) (newHeight / height * textureHeight);
+      }
+
+      addQuadInternal(newX, newY, newWidth, newHeight, color1, color2, color3, color4, newTextureX, newTextureY, newTextureWidth, newTextureHeight);
+    }
+
+    private void addQuadInternal(
+        final float x,
+        final float y,
+        final float width,
+        final float height,
+        final Color color1,
+        final Color color2,
+        final Color color3,
+        final Color color4,
+        final int textureX,
+        final int textureY,
+        final int textureWidth,
+        final int textureHeight) {
       int bufferIndex = 0;
       int elementIndexBufferIndex = 0;
 
