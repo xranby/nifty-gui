@@ -94,12 +94,12 @@ public class JoglInputSystem implements InputSystem, MouseListener,
     }
 
     private void handleKeyEvent(KeyEvent e, boolean isKeyDown) {
-        int newKeyCode = keyCodeConverter.convertToNiftyKeyCode(e.getKeyCode(), e.getKeySymbol());
+        int newKeyCode = keyCodeConverter.convertToNiftyKeyCode(e.getKeyCode());
         keyboardEvents.add(new KeyboardInputEvent(newKeyCode, e.getKeyChar(), isKeyDown, e
                 .isShiftDown(), e.isControlDown()));
     }
 
-    AwtToNiftyKeyCodeConverter keyCodeConverter = new AwtToNiftyKeyCodeConverter();
+    NEWTToNiftyKeyCodeConverter keyCodeConverter = new NEWTToNiftyKeyCodeConverter();
 
     @Override
     public void setMousePosition(int x, int y) {
